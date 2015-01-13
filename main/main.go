@@ -8,6 +8,8 @@ import (
 	"path"
 	"strings"
 	"io/ioutil"
+	"os/user"
+	"time"
 	"encoding/json"
 	"github.com/bartmeuris/goseafile"
 )
@@ -149,54 +151,28 @@ func (c *Command) Run(sf *goseafile.SeaFile, conf Config, args []string) error {
 }
 /////////////////////////////////////////////////////////////////////////////
 
-func main() {
-	var conf Config
-	var conffile string
-	var cmd Command
-	cmd.Set("listlibs")
+type StoredAuth struct {
+	Id string
+	Token string
+	TimeStamp time.Time
+}
 
-	flag.StringVar(&conffile, "conf", "", "a json file containing the url, user and password")
-	flag.StringVar(&conf.Url, "url", "", "the API endpoint")
-	flag.StringVar(&conf.User, "user", "", "the user")
-	flag.StringVar(&conf.Password, "password", "", "the user's password")
-	flag.StringVar(&conf.AuthToken, "token", "", "a valid auth token")
-	flag.StringVar(&conf.Library, "lib", "My Library", "the library to work in")
-	flag.Var(&cmd, "cmd", "the command to execute. The commands are: "+ strings.Join(cmd.GetCmds(), ", "))
-	flag.Parse()
+func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
+	// order to try authentication tokens:
+	// - stored if valid/available AND user/pass combination is available
+	// - commandline if provided
+	// - from config file if available
+	// When token auth fails: use username/password:
+	// - from commandline if provided
+	// - from config file if provided
+	// --------
+	// Cache auth tokens in ${HOME}/.config/goseafile/tokens.json
+	// - encrypt with hash of password
+	// - 
+	if u, err := user.Current(); err != nil {
+		fmt.Printf("User homedir: %s\n", u.HomeDir)
+	}
 
-	if conffile != "" {
-		// Read values from the config file
-		var v Config
-		if f, err := ioutil.ReadFile(conffile); err != nil {
-			log.Printf("ERROR: Could not read config file %s: %s\n", conffile, err)
-			os.Exit(1)
-		} else if err := json.Unmarshal(f, &v); err != nil {
-			log.Printf("ERROR: Could not decode JSON in config file %s: %s\n", conffile, err)
-			os.Exit(1)
-		}
-		if v.Url != "" {
-			conf.Url = v.Url
-		}
-		if v.AuthToken != "" {
-			conf.AuthToken = v.AuthToken
-		}
-		if v.User != "" {
-			conf.User = v.User
-		}
-		if v.Password != "" {
-			conf.Password = v.Password
-		}
-		if v.Library != "" {
-			conf.Library = v.Library
-		}
-	}
-	if conf.Url == "" {
-		log.Fatalf("ERROR: No valid seafile API endpoint specified\n")
-	}
-	sf := &goseafile.SeaFile{Url: conf.Url}
-	if ! sf.Ping() {
-		log.Fatalf("ERROR: no ping reply from %s\n", conf.Url)
-	}
 	if conf.AuthToken != "" {
 		sf.AuthToken = conf.AuthToken
 		if !sf.Authed() {
@@ -216,6 +192,57 @@ func main() {
 		log.Fatalf("ERROR: auth verification failed.\n")
 	}
 	log.Printf("Auth succeeded!\n")
+	return false
+}
+
+func main() {
+	var conf, cmdconf Config
+	var conffile string
+	var cmd Command
+	cmd.Set("listlibs")
+
+	flag.StringVar(&conffile, "conf", "", "a json file containing the url, user and password")
+	flag.StringVar(&conf.Url, "url", "", "the API endpoint")
+	flag.StringVar(&conf.User, "user", "", "the user")
+	flag.StringVar(&conf.Password, "password", "", "the user's password")
+	flag.StringVar(&conf.AuthToken, "token", "", "a valid auth token")
+	flag.StringVar(&conf.Library, "lib", "My Library", "the library to work in")
+	flag.Var(&cmd, "cmd", "the command to execute. The commands are: "+ strings.Join(cmd.GetCmds(), ", "))
+	flag.Parse()
+
+	if conffile != "" {
+		// Read values from the config file
+		if f, err := ioutil.ReadFile(conffile); err != nil {
+			log.Printf("ERROR: Could not read config file %s: %s\n", conffile, err)
+			os.Exit(1)
+		} else if err := json.Unmarshal(f, &cmdconf); err != nil {
+			log.Printf("ERROR: Could not decode JSON in config file %s: %s\n", conffile, err)
+			os.Exit(1)
+		}
+		if cmdconf.Url != "" {
+			conf.Url = cmdconf.Url
+		}
+		if cmdconf.User != "" {
+			conf.User = cmdconf.User
+		}
+		if cmdconf.Password != "" {
+			conf.Password = cmdconf.Password
+		}
+		if cmdconf.Library != "" {
+			conf.Library = cmdconf.Library
+		}
+	}
+	if conf.Url == "" {
+		log.Fatalf("ERROR: No valid seafile API endpoint specified\n")
+	}
+	sf := &goseafile.SeaFile{Url: conf.Url}
+	if ! sf.Ping() {
+		log.Fatalf("ERROR: no ping reply from %s\n", conf.Url)
+	}
+	
+	if !tryAuth(sf, conf, cmdconf) {
+		log.Fatalf("ERROR: Authentication failure")
+	}
 
 	if err := cmd.Run(sf, conf, flag.Args()); err != nil {
 		log.Fatalf("ERROR: Command %s returned an error: %s\n", cmd.String(), err)
