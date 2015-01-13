@@ -20,7 +20,7 @@ type Config struct {
 	Library string
 }
 
-type CmdRun func(*goseafile.SeaFile, []string) error
+type CmdRun func(*goseafile.SeaFile, Config, []string) error
 
 var cmdList = map[string]CmdRun {
 	"list": listCmd,
@@ -29,13 +29,13 @@ var cmdList = map[string]CmdRun {
 	"download": downloadCmd,
 }
 
-func listLibsCmd(sf *goseafile.SeaFile, args []string) error {
+func listLibsCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
 	if v, err := sf.ListLibraries(); err == nil {
-		log.Printf("# listlibs start\n")
+		fmt.Printf("# listlibs start\n")
 		for _, e := range v {
-			log.Printf("%s\n", e.Name)
+			fmt.Printf("%s\n", e.Name)
 		}
-		log.Printf("# listlibs end\n")
+		fmt.Printf("# listlibs end\n")
 	} else {
 		return err
 	}
@@ -53,9 +53,9 @@ func getUplFiles(arg string) (string, string) {
 	return "", ""
 }
 
-func uploadCmd(sf *goseafile.SeaFile, args []string) error {
+func uploadCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
 	ecnt := 0
-	if l, err := sf.GetLibrary("My Library"); err != nil {
+	if l, err := sf.GetLibrary(conf.Library); err != nil {
 		return err
 	} else {
 		for _, f := range args  {
@@ -82,12 +82,29 @@ func uploadCmd(sf *goseafile.SeaFile, args []string) error {
 	return nil
 }
 
-func downloadCmd(sf *goseafile.SeaFile, args []string) error {
+func downloadCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
 	return fmt.Errorf("Not implemented")
 }
 
-func listCmd(sf *goseafile.SeaFile, args []string) error {
-	return fmt.Errorf("Not implemented")
+func listCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
+	if l, err := sf.GetLibrary(conf.Library); err != nil {
+		return err
+	} else {
+		arg := ""
+		if len(args) > 0 {
+			arg = args[0]
+		}
+		if fl, err := l.List(arg); err != nil {
+			return err
+		} else {
+			fmt.Printf("# list start { \"lib\": \"%s\", \"path\": \"%s\" }\n", conf.Library, arg)
+			for _, f := range fl {
+				fmt.Printf("%s\n", f.Name)
+			}
+			fmt.Printf("# list end\n")
+		}
+	}
+	return nil
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -124,9 +141,9 @@ func (c *Command) GetCmds() []string {
 	return r
 }
 
-func (c *Command) Run(sf *goseafile.SeaFile, args []string) error {
+func (c *Command) Run(sf *goseafile.SeaFile, conf Config, args []string) error {
 	if f, ok := cmdList[c.Cmd]; ok {
-		return f(sf, args)
+		return f(sf, conf, args)
 	}
 	return fmt.Errorf("unknown command %s", c.Cmd)
 }
@@ -177,11 +194,9 @@ func main() {
 		log.Fatalf("ERROR: No valid seafile API endpoint specified\n")
 	}
 	sf := &goseafile.SeaFile{Url: conf.Url}
-
 	if ! sf.Ping() {
-		log.Fatalf("ERROR: the specified API endpoint '%s' does not seem to be valid\n", conf.Url)
+		log.Fatalf("ERROR: no ping reply from %s\n", conf.Url)
 	}
-	
 	if conf.AuthToken != "" {
 		sf.AuthToken = conf.AuthToken
 		if !sf.Authed() {
@@ -202,7 +217,7 @@ func main() {
 	}
 	log.Printf("Auth succeeded!\n")
 
-	if err := cmd.Run(sf, flag.Args()); err != nil {
+	if err := cmd.Run(sf, conf, flag.Args()); err != nil {
 		log.Fatalf("ERROR: Command %s returned an error: %s\n", cmd.String(), err)
 	}
 }
