@@ -169,8 +169,10 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	// Cache auth tokens in ${HOME}/.config/goseafile/tokens.json
 	// - encrypt with hash of password
 	// - 
-	if u, err := user.Current(); err != nil {
-		fmt.Printf("User homedir: %s\n", u.HomeDir)
+	if u, err := user.Current(); err == nil {
+		log.Printf("User homedir: %s\n", u.HomeDir)
+	} else {
+		log.Printf("ERROR: could not get user: %s\n", err)
 	}
 
 	if conf.AuthToken != "" {
@@ -183,16 +185,18 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	if sf.AuthToken == "" && conf.User != "" && conf.Password != "" {
 		if err := sf.Login(conf.User, conf.Password); err != nil {
 			log.Printf("ERROR: no valid authentication found (auth error: %s)\n", err)
-			os.Exit(1)
+			return false
 		}
 	} else {
-		log.Fatalf("ERROR: No valid authentication provided")
+		log.Printf("ERROR: No valid authentication provided")
+		return false
 	}
 	if !sf.Authed() {
-		log.Fatalf("ERROR: auth verification failed.\n")
+		log.Printf("ERROR: auth verification failed.\n")
+		return false
 	}
 	log.Printf("Auth succeeded!\n")
-	return false
+	return true
 }
 
 func main() {
@@ -240,7 +244,7 @@ func main() {
 		log.Fatalf("ERROR: no ping reply from %s\n", conf.Url)
 	}
 	
-	if !tryAuth(sf, conf, cmdconf) {
+	if !tryAuth(sf, &conf, &cmdconf) {
 		log.Fatalf("ERROR: Authentication failure")
 	}
 
