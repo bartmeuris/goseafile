@@ -170,7 +170,7 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	// - encrypt with hash of password
 	// - 
 	if u, err := user.Current(); err == nil {
-		log.Printf("User homedir: %s\n", u.HomeDir)
+		log.Printf("User homedir: %s/\n", u.HomeDir)
 	} else {
 		log.Printf("ERROR: could not get user: %s\n", err)
 	}
