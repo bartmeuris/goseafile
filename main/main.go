@@ -2,15 +2,22 @@ package main
 
 import (
 	"os"
+	"io"
 	"log"
 	"fmt"
 	"flag"
 	"path"
 	"strings"
 	"io/ioutil"
+	"crypto/md5"
+	"crypto/sha256"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"os/user"
 	"time"
-	"encoding/json"
 	"github.com/bartmeuris/goseafile"
 )
 
@@ -45,12 +52,12 @@ func listLibsCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
 }
 
 func getUplFiles(arg string) (string, string) {
-	s := strings.Split(arg, ";")
+	s := strings.Split(arg, "=")
 	if len(s) == 1 {
 		// Only local file specified, target file is "/<filename>"
 		return s[0], "/" + path.Base(s[0])
 	} else if len(s) >= 2 {
-		return s[0], path.Clean(s[1])
+		return s[0], path.Clean("/" + s[1])
 	}
 	return "", ""
 }
@@ -67,6 +74,7 @@ func uploadCmd(sf *goseafile.SeaFile, conf Config, args []string) error {
 				ecnt++
 				continue
 			}
+			fmt.Printf("Upload '%s' => lib: '%s', file: '%s'\n", local, conf.Library, remote)
 			if file, err := os.Open(local); err != nil {
 				log.Printf("ERROR: Could not open file '%s': %s\n", f, err)
 				ecnt++
@@ -149,12 +157,164 @@ func (c *Command) Run(sf *goseafile.SeaFile, conf Config, args []string) error {
 	}
 	return fmt.Errorf("unknown command %s", c.Cmd)
 }
+
 /////////////////////////////////////////////////////////////////////////////
 
 type StoredAuth struct {
-	Id string
-	Token string
+	Token []byte
 	TimeStamp time.Time
+	DecToken string `json:"-"`
+}
+
+func encrypt(key, text []byte) ([]byte, error) {
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+    b := base64.StdEncoding.EncodeToString(text)
+    ciphertext := make([]byte, aes.BlockSize+len(b))
+    iv := ciphertext[:aes.BlockSize]
+    if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+        return nil, err
+    }
+    cfb := cipher.NewCFBEncrypter(block, iv)
+    cfb.XORKeyStream(ciphertext[aes.BlockSize:], []byte(b))
+    return ciphertext, nil
+}
+
+func decrypt(key, text []byte) ([]byte, error) {
+    block, err := aes.NewCipher(key)
+    if err != nil {
+        return nil, err
+    }
+    if len(text) < aes.BlockSize {
+        return nil, fmt.Errorf("ciphertext too short")
+    }
+    iv := text[:aes.BlockSize]
+    text = text[aes.BlockSize:]
+    cfb := cipher.NewCFBDecrypter(block, iv)
+    cfb.XORKeyStream(text, text)
+    data, err := base64.StdEncoding.DecodeString(string(text))
+    if err != nil {
+        return nil, err
+    }
+    return data, nil
+}
+
+func doAuth(sf *goseafile.SeaFile, token string) bool {
+    if token == "" {
+	return false
+    }
+    sf.AuthToken = token
+    if sf.Authed() {
+	return true
+    }
+    fmt.Printf("WARN: Token '%s' invalid\n", token)
+    return false
+}
+
+
+func getAESKey(conf *Config) []byte {
+    // Create a AES key of 32 bytes to select AES-256
+    //return []byte(strings.Repeat(conf.Password, (32 / len(conf.Password)) + 1))[0:32]
+    ret := sha256.Sum256([]byte(conf.Password))
+    return ret[0:32]
+}
+
+func getTokId(conf *Config) string {
+    return fmt.Sprintf("%x", md5.Sum([]byte(conf.Url + "##" + conf.User)))
+}
+
+func getFilePath() string {
+    if u, err := user.Current(); err == nil {
+	return path.Clean(u.HomeDir + "/.config/goseafile/tokens.json")
+    } else {
+	log.Printf("ERROR: could not get user: %s\n", err)
+    }
+    return ""
+}
+
+func getFileToken(file string, conf *Config) *StoredAuth {
+    if file == "" {
+	return nil
+    }
+    key := getAESKey(conf)
+    if key == nil {
+	log.Printf("Could not get AES key\n")
+	return nil
+    }
+    if b, err := ioutil.ReadFile(file); err == nil {
+	keys := make(map[string]StoredAuth)
+	if err := json.Unmarshal(b, &keys); err == nil {
+	    if k, ok := keys[getTokId(conf)]; ok {
+		if btok, err := decrypt(key, k.Token); err != nil {
+		    log.Printf("Could decrypt token: %s\n", err)
+		} else {
+		    k.DecToken = string(btok)
+		    return &k
+		}
+	    } else {
+		log.Printf("Token not found for %s (%s@%s)\n", getTokId(conf), conf.User, conf.Url)
+	    }
+	} else {
+	    log.Printf("Could not unmarshal '%s' contents: %s\n", file, err)
+	}
+    } else {
+	log.Printf("Error reading file '%s': %s\n", file, err)
+    }
+    return nil
+}
+
+func setFileToken(file, token string, expire time.Duration, conf *Config) error {
+	if file == "" {
+	    return fmt.Errorf("file given was empty")
+	}
+	if token == "" {
+	    return fmt.Errorf("token given was empty")
+	}
+	key := getAESKey(conf)
+	if key == nil {
+	    return nil
+	}
+	if btok, err := encrypt(key, []byte(token)); err == nil {
+		// Create directory if it doesn't exist
+		if err := os.MkdirAll(path.Dir(file), 0700); err != nil {
+		    return err
+		}
+		keys := make(map[string]StoredAuth)
+		// read the existing tokpath
+		if b, err := ioutil.ReadFile(file); err == nil {
+		    if err := json.Unmarshal(b, &keys); err != nil {
+			return err
+		    }
+		} else {
+		    log.Printf("WARN: Could not re-read file '%s' -- ignoring\n", file)
+		}
+		if expire > 0 {
+		    // remove expired tokens
+		    now := time.Now()
+		    for kt := range keys {
+			if now.Sub(keys[kt].TimeStamp) > expire {
+			    log.Printf("Removing expired key: %q\n", keys[kt])
+			    delete(keys, kt)
+			}
+		    }
+		}
+		// append new token
+		keys[getTokId(conf)] = StoredAuth{
+		    Token: btok,
+		    TimeStamp: time.Now(),
+		}
+		// marshal and rewrite config file
+		if bytes, err := json.Marshal(keys); err != nil {
+		    return err
+		} else if err := ioutil.WriteFile(file, bytes, 0600); err != nil {
+		    return err
+		}
+	} else {
+	    return err
+	}
+	return nil
 }
 
 func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
@@ -169,26 +329,30 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	// Cache auth tokens in ${HOME}/.config/goseafile/tokens.json
 	// - encrypt with hash of password
 	// - 
-	if u, err := user.Current(); err == nil {
-		log.Printf("User homedir: %s/\n", u.HomeDir)
-	} else {
-		log.Printf("ERROR: could not get user: %s\n", err)
+	var tokpath string
+	var maxtime = 15 * time.Minute
+	tok := ""
+	tokpath = getFilePath()
+	if st := getFileToken(tokpath, conf); st != nil {
+	    log.Printf("Existing token found: %q\n", st)
+	    if time.Now().Sub(st.TimeStamp) < maxtime {
+		log.Printf("Token %s still valid!\n", st.DecToken)
+		tok = st.DecToken
+	    }
 	}
-
-	if conf.AuthToken != "" {
-		sf.AuthToken = conf.AuthToken
-		if !sf.Authed() {
-			conf.AuthToken = ""
-			log.Printf("WARNING: provided auth token not valid!\n")
-		}
+	
+	if doAuth(sf, tok) {
+		return true
+	} else if doAuth(sf, cmdc.AuthToken) {
+		return true
+	} else if doAuth(sf, conf.AuthToken) {
+		return true
 	}
-	if sf.AuthToken == "" && conf.User != "" && conf.Password != "" {
-		if err := sf.Login(conf.User, conf.Password); err != nil {
-			log.Printf("ERROR: no valid authentication found (auth error: %s)\n", err)
-			return false
-		}
-	} else {
-		log.Printf("ERROR: No valid authentication provided")
+	if conf.Password == "" {
+		return false
+	}
+	if err := sf.Login(conf.User, conf.Password); err != nil {
+		log.Printf("ERROR: no valid authentication found (auth error: %s)\n", err)
 		return false
 	}
 	if !sf.Authed() {
@@ -196,6 +360,10 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 		return false
 	}
 	log.Printf("Auth succeeded!\n")
+	// Now store the auth token
+	if err := setFileToken(tokpath, sf.AuthToken, maxtime, conf); err != nil {
+		log.Printf("WARN: Could not save auth token: %s\n", err)
+	}
 	return true
 }
 
