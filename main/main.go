@@ -331,25 +331,27 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	// --------
 	// Cache auth tokens in ${HOME}/.config/goseafile/tokens.json
 	// - encrypt with hash of password
-	// -
+
 	var tokpath string
 	var maxtime = 15 * time.Minute
 	tok := ""
 	tokpath = getFilePath()
 	if st := getFileToken(tokpath, conf); st != nil {
-		log.Printf("Existing token found: %q\n", st)
+		//log.Printf("Existing token found: %q\n", st)
 		if time.Now().Sub(st.TimeStamp) < maxtime {
-			log.Printf("Token %s still valid!\n", st.DecToken)
+			//log.Printf("Token %s still valid!\n", st.DecToken)
 			tok = st.DecToken
+		} else {
+			log.Printf("WARN: Token found but not valid anymore\n")
 		}
 	}
 
 	if doAuth(sf, tok) {
 		return true
 	} else if tok != "" {
-		log.Printf("Removing token '%s'", tok)
+		log.Printf("WARN: Auth failed with stored token -- removing token '%s'", tok)
 		if err := setFileToken(tokpath, "", maxtime, conf); err != nil {
-			log.Printf("WARN: Could not remove auth token: %s\n", err)
+			log.Printf("WARN: Could not remove invalid auth token: %s\n", err)
 		}
 	}
 
@@ -363,10 +365,6 @@ func tryAuth(sf *goseafile.SeaFile, conf, cmdc *Config) bool {
 	}
 	if err := sf.Login(conf.User, conf.Password); err != nil {
 		log.Printf("ERROR: no valid authentication found (auth error: %s)\n", err)
-		return false
-	}
-	if !sf.Authed() {
-		log.Printf("ERROR: auth verification failed.\n")
 		return false
 	}
 	log.Printf("Auth succeeded!\n")
@@ -418,9 +416,11 @@ func main() {
 		log.Fatalf("ERROR: No valid seafile API endpoint specified\n")
 	}
 	sf := &goseafile.SeaFile{Url: conf.Url}
+	/*
 	if !sf.Ping() {
 		log.Fatalf("ERROR: no ping reply from %s\n", conf.Url)
 	}
+	*/
 
 	if !tryAuth(sf, &conf, &cmdconf) {
 		log.Fatalf("ERROR: Authentication failure")
