@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/bartmeuris/goseafile"
 	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"strings"
 	"time"
+
+	"github.com/bartmeuris/goseafile"
 )
 
 type Config struct {
@@ -254,9 +255,11 @@ func main() {
 		}
 	*/
 
+	/*
 	if !tryAuth(sf, &conf, &cmdconf) {
 		log.Fatalf("ERROR: Authentication failure")
 	}
+	*/
 
 	if err := cmd.Run(sf, conf, flag.Args()); err != nil {
 		log.Fatalf("ERROR: Command %s returned an error: %s\n", cmd.String(), err)
