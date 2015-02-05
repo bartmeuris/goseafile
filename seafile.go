@@ -13,6 +13,45 @@ import (
 type SeaFile struct {
 	AuthToken string
 	Url       string
+	SaveAuth  bool
+}
+
+var AuthError = fmt.Errorf("authentication error")
+var ThrottledError = fmt.Errorf("request was throttled")
+var NotFoundError = fmt.Errorf("request was throttled")
+
+func getError(status int, expectedstats []int) error {
+	if expectedstats == nil {
+		expectedstats = []int{ 200, 201, 202 }
+	}
+	for _, es := range expectedstats {
+		if status == es {
+			return nil
+		}
+	}
+	switch (status) {
+	case 301:
+		// moved
+	case 400:
+		// Bad request
+	case 403:
+		return AuthError
+	case 404:
+		return NotFoundError
+	case 409:
+		// conflict
+	case 429:
+		return ThrottledError
+	case 440:
+		// repo password required
+	case 441:
+		// repo password magic required
+	case 500:
+		// Internal server error
+	case 520:
+		// Operation failed
+	}
+	return fmt.Errorf("unexpected http status: %d", status)
 }
 
 func (s *SeaFile) newReq(method, entry string) (*http.Request, error) {
