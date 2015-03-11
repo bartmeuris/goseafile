@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 type SeaFile struct {
@@ -16,10 +17,21 @@ type SeaFile struct {
 	SaveAuth  bool
 	User      string
 	Password  string
-	TransferPct chan float64
+	TransferPct chan TransferProgress
 
 	authTries int
 }
+
+type TransferProgress struct {
+	Transferred  int64   // in bytes
+	TotalSize    int64   // in bytes
+	Percent      float64
+	SpeedAvgSec  int64   // Bytes/sec average
+	SpeedLastSec int64   // Bytes/sec of last transfer
+	Remaining    time.Duration // Estimated time remaining
+	StartTime    time.Time
+}
+
 
 var AuthError           = fmt.Errorf("authentication error")
 var ThrottledError      = fmt.Errorf("request was throttled")
