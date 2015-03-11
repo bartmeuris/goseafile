@@ -16,6 +16,7 @@ type SeaFile struct {
 	SaveAuth  bool
 	User      string
 	Password  string
+	TransferPct chan float64
 
 	authTries int
 }

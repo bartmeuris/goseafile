@@ -2,6 +2,7 @@ package goseafile
 
 import (
 	"fmt"
+	"os"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -70,8 +71,57 @@ func (l *Library) GetOwner() string {
 	}
 }
 
+func copyPct(w io.Writer, r io.Reader, fsize int64, pctcb chan float64) (written int64, err error) {
+	if pctcb == nil || fsize < 0 {
+		return io.Copy(w, r)
+	}
+	// Copy the data ourself so we're able to provide a "percentage" feedback
+	// This is largely a copy of the Go 1.4 io.Copy routine
+	if pctcb != nil {
+		defer close(pctcb)
+	}
+	buf := make([]byte, 32*1024)
+	pwpct := float64(-1.0) // Previously written percentage
+	for {
+		nr, er := r.Read(buf)
+		if nr > 0 {
+			nw, ew := w.Write(buf[0:nr])
+			if nw > 0 {
+				written += int64(nw)
+				pct := float64(int64((float64(written) / float64(fsize)) * 10000.0)) / 100.0
+				// Only update the percentage if it changed
+				if pctcb != nil && pct != pwpct {
+					select {
+						case pctcb <- pct:
+							// We could write the percentage
+							pwpct = pct
+						default:
+							// Writing the percentage would block - skip
+					}
+				}
+			}
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er == io.EOF {
+			break
+		}
+		if er != nil {
+			err = er
+			break
+		}
+	}
+	return written, err
+}
+
 // upload with a pipewriter -> stream upload
-func streamUpload(f io.Reader, filename, fieldname string, params map[string]string) (string, *io.PipeReader, error) {
+func streamUpload(f io.Reader, fsize int64, pctch chan float64, filename, fieldname string, params map[string]string) (string, *io.PipeReader, error) {
 	// First handle closable resources
 	r, w := io.Pipe()
 	rc, ok := f.(io.ReadCloser)
@@ -90,7 +140,7 @@ func streamUpload(f io.Reader, filename, fieldname string, params map[string]str
 		if pw, err := writer.CreateFormFile(fieldname, filename); err != nil {
 			w.CloseWithError(err)
 			return
-		} else if _, err := io.Copy(pw, rc); err != nil {
+		} else if _, err := copyPct(pw, rc, fsize, pctch); err != nil {
 			w.CloseWithError(err)
 			return
 		}
@@ -103,7 +153,24 @@ func streamUpload(f io.Reader, filename, fieldname string, params map[string]str
 	return ctype, r, nil
 }
 
-func (l *Library) Upload(path string, fileio io.Reader) error {
+func (l *Library) UploadFile(file, targetpath string) error {
+	if f, err := os.Open(file); err == nil {
+		defer f.Close()
+		// Get the filesize by seeking to the end of the file, and back to offset 0
+		fsize, err := f.Seek(0, os.SEEK_END)
+		if err != nil {
+			return err
+		}
+		if _, err := f.Seek(0, os.SEEK_SET); err != nil {
+			return err
+		}
+		return l.Upload(f, fsize, targetpath)
+	} else {
+		return err
+	}
+}
+
+func (l *Library) Upload(fileio io.Reader, fsize int64, tgtpath string) error {
 	// http://manual.seafile.com/develop/web_api.html#upload-file
 	// 1. Get upload url
 	var upllink string
@@ -117,17 +184,17 @@ func (l *Library) Upload(path string, fileio io.Reader) error {
 	if req, err := l.sf.newReq("POST", upllink); err != nil {
 		return err
 	} else {
-		path = filepath.Clean(path)
-		fn := filepath.Base(path)
-		path = filepath.Dir(path)
-		if path == "" {
-			path = "/"
+		tgtpath = filepath.Clean(tgtpath)
+		fn := filepath.Base(tgtpath)
+		tgtpath = filepath.Dir(tgtpath)
+		if tgtpath == "" {
+			tgtpath = "/"
 		}
 		formval := map[string]string{
-			"parent_dir": path,
+			"parent_dir": tgtpath,
 			"filename":   fn,
 		}
-		if ctype, r, err := streamUpload(fileio, fn, "file", formval); err != nil {
+		if ctype, r, err := streamUpload(fileio, fsize, l.sf.TransferPct,  fn, "file", formval); err != nil {
 			return err
 		} else {
 			req.Body = r
