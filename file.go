@@ -1,5 +1,6 @@
 package goseafile
 
+// File represents a file in a SeaFile library
 type File struct {
 	lib   *Library `json:"-"`
 	Id    string

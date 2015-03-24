@@ -1,5 +1,13 @@
 package goseafile
 
+// This file implements authentication token caching for user/password
+// combinations. It saves the authentication tokens, encrypted with the 
+// SHA256 of the provided password, so you need to specify the user's
+// password in order to unlock the authentication token. This prevents
+// unnecessary posts of the user's password over public connections.
+// Files are stored in ~/.config/goseafile/tokens.json (the user's home
+// directory)
+
 import (
 	"crypto/aes"
 	"crypto/cipher"

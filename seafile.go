@@ -8,35 +8,28 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 )
 
+// SeaFile represents a SeaFile connection
 type SeaFile struct {
 	AuthToken string
 	Url       string
 	SaveAuth  bool
 	User      string
 	Password  string
-	TransferPct chan TransferProgress
 
 	authTries int
 }
 
-type TransferProgress struct {
-	Transferred  int64   // in bytes
-	TotalSize    int64   // in bytes
-	Percent      float64
-	SpeedAvgSec  int64   // Bytes/sec average
-	SpeedLastSec int64   // Bytes/sec of last transfer
-	Remaining    time.Duration // Estimated time remaining
-	StartTime    time.Time
-}
-
-
+// AuthError indicates an authentication error
 var AuthError           = fmt.Errorf("authentication error")
+// ThrottledError indicates the request was throttled by the server
 var ThrottledError      = fmt.Errorf("request was throttled")
+// NotFoundError indicates that an object or API endpoint could not be found
 var NotFoundError       = fmt.Errorf("request was throttled")
+// OperationFailed indicates the operation failed
 var OperationFailed     = fmt.Errorf("operation failed")
+// InternalServerError indicates an internal server error
 var InternalServerError = fmt.Errorf("internal server error")
 
 func getError(status int, expectedstats ...int) error {
@@ -174,6 +167,8 @@ func (s *SeaFile) req(method, fnc string, form url.Values, rv interface{}) error
 	}
 }
 
+// Ping sends a ping request to the seafile server's API endpoint. Returns
+// true on success, false on failure.
 func (s *SeaFile) Ping() bool {
 	if resp, err := s.reqResp("GET", "/ping/", nil); err != nil {
 		return false
@@ -199,6 +194,7 @@ func (s *SeaFile) Ping() bool {
 	return false
 }
 
+// Login logs into the seafile instance with the specified user and password.
 func (s *SeaFile) Login(user string, password string) error {
 	var tok struct {
 		Token string
@@ -214,6 +210,8 @@ func (s *SeaFile) Login(user string, password string) error {
 	return nil
 }
 
+// Authed checks if we are currently authenticated (read: we have a valid authentication
+// token)
 func (s *SeaFile) Authed() bool {
 	var rv string
 	if err := s.req("GET", "/auth/ping/", nil, &rv); err != nil {

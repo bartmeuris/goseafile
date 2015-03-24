@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 )
 
+// Library represents a SeaFile library linked to a SeaFile instance
 type Library struct {
 	sf         *SeaFile `json:"-"`
 	Permission string
@@ -24,6 +25,8 @@ type Library struct {
 	Root       string
 }
 
+// GetLibrary returns the library object for a library with the given name,
+// or an error if it could not be found
 func (s *SeaFile) GetLibrary(lib string) (*Library, error) {
 	if libl, err := s.ListLibraries(); err != nil {
 		return nil, err
@@ -37,6 +40,8 @@ func (s *SeaFile) GetLibrary(lib string) (*Library, error) {
 	return nil, fmt.Errorf("could not find library '%s'", lib)
 }
 
+// ListLibraries returns a list with Library objects for each library available
+// for the logged in user.
 func (s *SeaFile) ListLibraries() ([]*Library, error) {
 	var v []*Library
 	if err := s.req("GET", "/repos/", nil, &v); err != nil {
@@ -48,7 +53,7 @@ func (s *SeaFile) ListLibraries() ([]*Library, error) {
 	return v[0:], nil
 }
 
-func NewLibrary(seafile *SeaFile, id string) *Library {
+func newLibrary(seafile *SeaFile, id string) *Library {
 	lib := &Library{
 		Id: id,
 		sf: seafile,
@@ -59,6 +64,7 @@ func NewLibrary(seafile *SeaFile, id string) *Library {
 	return lib
 }
 
+// GetOwner returns the owner from the library
 func (l *Library) GetOwner() string {
 	var own struct {
 		Owner string
@@ -106,6 +112,9 @@ func streamUpload(f io.Reader, filename, fieldname string, params map[string]str
 	return ctype, r, nil
 }
 
+
+// Upload uploads data from an io.Reader to a file with the specified
+// target path in the current library.
 func (l *Library) Upload(fileio io.Reader, tgtpath string) error {
 	// http://manual.seafile.com/develop/web_api.html#upload-file
 	// 1. Get upload url
@@ -147,6 +156,7 @@ func (l *Library) Upload(fileio io.Reader, tgtpath string) error {
 	return nil
 }
 
+// List returns a list of all Files in the specified path.
 func (l *Library) List(path string) ([]File, error) {
 	var flist []File
 	urls := "/repos/" + l.Id + "/dir/"
@@ -163,6 +173,7 @@ func (l *Library) List(path string) ([]File, error) {
 	}
 }
 
+// Update refreshes the Library information
 func (l *Library) Update() error {
 	if err := l.sf.req("GET", "/repos/"+l.Id+"/", nil, l); err != nil {
 		return err
