@@ -7,5 +7,5 @@ A commandline tool is also available, you can `go get` it like this:
 
     go get github.com/bartmeuris/goseafile/cmd/seafile-cli
 
-You can check out [the examples and documentation of the CLI tool here](cmd/seafile-cli/)
+You can check out [the examples](cmd/seafile-cli/examples/) and [documentation](cmd/seafile-cli/).
 
