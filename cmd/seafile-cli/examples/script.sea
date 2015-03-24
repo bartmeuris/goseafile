@@ -1,0 +1,40 @@
+# Sample seafile-cli script file
+# ===================================================
+# Environment expansion
+#
+# - Scripts can use environment variables in the form of $VAR or ${VAR}
+# - Scripts can also use the commandline parameters in the form of $1, $2, ... or ${1}, ${2}, ...
+# 
+# Available commands:
+#
+# - url <url>
+#		Set the seafile server endpoint
+# - user <user>
+#		Set the user to use. This clears authentication tokens
+# - password | pass <password>
+#		The password to use for login. Password will not be echoed, but replaced by '********' in output
+# - list [path]
+#		do a file listing of the provided path in the currently selected library. If no path is given, it takes the root (/)
+# - listlibs
+#		Lists the available libraries
+# - setlib | lib | library <libraryname>
+#		Sets the current active library. Note that no checks are performed if the library exists.
+# - upload <local file> [destination file or directory]
+#		Uploads the specified file on the local filesystem.
+# - download <remote file> [local destination file or directory]
+#		** NOT IMPLEMENTED ** Downloads the specified remote file to the local filesystem. 
+#
+#
+
+url       "http://seafile-test/"
+user      "test@test.com"
+password  "${PASSWORD}"
+listlibs
+setlib "TestLibrary"
+list
+list "/Some folder"
+upload somefile.txt "/Some folder/"
+download "/Some folder/somefile.txt" test.txt
+
+# Script end
+
