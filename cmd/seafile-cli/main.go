@@ -26,6 +26,7 @@ type Config struct {
 	AuthToken string
 	Library   string
 	Script    string
+	NoProgress bool
 }
 
 type CmdRun func(string, *goseafile.SeaFile, *Config, []string) error
@@ -88,12 +89,15 @@ func listLibsCmd(cmd string, sf *goseafile.SeaFile, conf *Config, args []string)
 	return nil
 }
 
-func showProgress(ch <- chan progressio.Progress, local, lib, remote string) {
+func showProgress(ch <- chan progressio.Progress, local, lib, remote string, noprogress bool) {
 	clearstr := ""
 	//ss := Metric
 	ss := progressio.IEC
 	p := progressio.Progress{}
 	for p = range ch {
+		if noprogress {
+			continue
+		}
 		str := fmt.Sprintf("[%.2f%%] %s => %s::%s (%s/%s) (Speed: %s/sec, AVG: %s/sec) (Remaining: %s)",
 			p.Percent,
 			local,
@@ -105,6 +109,35 @@ func showProgress(ch <- chan progressio.Progress, local, lib, remote string) {
 			progressio.FormatSize(ss, p.SpeedAvg, true),
 			progressio.FormatDuration(p.Remaining),
 		)
+		if cw := GetConWidth(); (cw > 0) && (len(str) > cw) && (len(remote) > 3) && (len(local) > 3) {
+			overshoot := float64(((len(str) - cw) / 2) * 2) + 2
+			//fmt.Printf("Console width: %d / str: %d / remote: %d / local: %d / overshoot: %f\n\n", cw, len(str), len(remote), len(local), overshoot)
+			fli := 0
+			fri := 0
+			if len(local) < len(remote) {
+				lf := float64(len(local)) / float64(len(remote))
+				fli = int(overshoot * (lf))
+				fri = int(overshoot * (1.0 - lf))
+			} else {
+				lf :=  float64(len(remote)) / float64(len(local))
+				fli = int(overshoot * (1.0 - lf))
+				fri = int(overshoot * (lf))
+			}
+			fl := "..." + local[fli + 3:len(local)]
+			fr := "..." + remote[fri + 3:len(remote)]
+			
+			str = fmt.Sprintf("[%.2f%%] %s => %s::%s (%s/%s) (Speed: %s/sec, AVG: %s/sec) (Remaining: %s)",
+				p.Percent,
+				fl,
+				lib,
+				fr,
+				progressio.FormatSize(ss, p.Transferred, true),
+				progressio.FormatSize(ss, p.TotalSize, true),
+				progressio.FormatSize(ss, p.Speed, true),
+				progressio.FormatSize(ss, p.SpeedAvg, true),
+				progressio.FormatDuration(p.Remaining),
+			)
+		}
 		if (len(str) + 1) > len(clearstr) {
 			clearstr = strings.Repeat(" ", len(str))
 		}
@@ -147,7 +180,7 @@ func uploadCmd(cmd string, sf *goseafile.SeaFile, conf *Config, args []string) e
 			return err
 		} else {
 			defer f.Close()
-			go showProgress(ch, local, conf.Library, remote)
+			go showProgress(ch, local, conf.Library, remote, conf.NoProgress)
 		
 			if err := l.Upload(f, remote); err != nil {
 				return err
@@ -290,6 +323,7 @@ func main() {
 	flag.StringVar(&conf.AuthToken, "token", "", "a valid auth token")
 	flag.StringVar(&conf.Library, "lib", "My Library", "the library to work in")
 	flag.StringVar(&conf.Script, "script", "", "A script to execute.")
+	flag.BoolVar(&conf.NoProgress, "noprogress", false, "Don't show progress.")
 	flag.BoolVar(&logDebug, "debug", false, "Output warning & debug statements.")
 	flag.BoolVar(&logWarn, "warn", false, "Output warnings")
 	flag.Var(&cmd, "cmd", "the command to execute. Available commands are: "+strings.Join(cmd.GetCmds(), ", "))
