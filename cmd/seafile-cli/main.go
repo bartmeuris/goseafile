@@ -30,6 +30,11 @@ type Config struct {
 
 type CmdRun func(string, *goseafile.SeaFile, *Config, []string) error
 
+var buildDate string
+var buildHash string
+var verMaj string
+var verMin string
+
 var cmdList = map[string]CmdRun{
 	"list":     listCmd,
 	"listlibs": listLibsCmd,
@@ -323,21 +328,16 @@ func main() {
 			conf.Library = cmdconf.Library
 		}
 	}
-	/*
-	if conf.Url == "" {
-		log.Fatalf("[ERROR] No valid seafile API endpoint specified\n")
+	if (verMaj != "") && (verMin != "") {
+		log.Printf("goseafile-cli v%s.%s git:%s date:%s\n", verMaj, verMin, buildHash, buildDate)
+	} else {
+		log.Printf("goseafile-cli <experimental build>\n")
 	}
-	*/
 	sf := &goseafile.SeaFile{
 		Url: conf.Url,
 		User: conf.User,
 		Password: conf.Password,
 	}
-	/*
-		if !sf.Ping() {
-			log.Fatalf("[ERROR] no ping reply from %s\n", conf.Url)
-		}
-	*/
 	if conf.Script == "-" {
 		if err := runScript(sf, &conf, os.Stdin, flag.Args()...); err != nil {
 			log.Fatalf("[ERROR] Script error: %s\n", err)
