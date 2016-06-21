@@ -81,8 +81,10 @@ func (sf *SeaFile) getTokId() string {
 func (sf *SeaFile) getFilePath() string {
 	if u, err := user.Current(); err == nil {
 		return path.Clean(u.HomeDir + "/.config/goseafile/tokens.json")
+	} else if hd := os.Getenv("HOME"); hd != "" {
+		return path.Clean(hd + "/.config/goseafile/tokens.json")
 	} else {
-		log.Printf("[ERROR] could not get user: %s\n", err)
+		log.Printf("[ERROR] could not get user home directory")
 	}
 	return ""
 }
