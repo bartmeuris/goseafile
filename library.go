@@ -18,7 +18,7 @@ type Library struct {
 	Mtime      int64
 	Owner      string
 	Id         string
-	Size       int
+	Size       int64
 	Name       string
 	Virtual    bool
 	Desc       string
